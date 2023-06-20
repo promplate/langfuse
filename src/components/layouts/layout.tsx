@@ -116,9 +116,7 @@ export default function Layout(props: PropsWithChildren) {
     pathsWithoutNavigation.includes(router.pathname);
   if (hideNavigation)
     return (
-      <main className="h-full bg-gray-50 px-4 py-4 sm:px-6 lg:px-8">
-        {props.children}
-      </main>
+      <main className="h-full px-4 py-4 sm:px-6 lg:px-8">{props.children}</main>
     );
 
   return (
@@ -139,7 +137,7 @@ export default function Layout(props: PropsWithChildren) {
               leaveFrom="opacity-100"
               leaveTo="opacity-0"
             >
-              <div className="fixed inset-0 bg-gray-900/80" />
+              <div className="fixed inset-0 bg-background" />
             </Transition.Child>
 
             <div className="fixed inset-0 flex">
@@ -177,7 +175,7 @@ export default function Layout(props: PropsWithChildren) {
                     </div>
                   </Transition.Child>
                   {/* Sidebar component, swap this element with another sidebar if you like */}
-                  <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-white px-6 pb-4">
+                  <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-background px-6 pb-4 ">
                     <div className="flex h-16 shrink-0 items-center font-mono text-xl font-bold">
                       🪢 langfuse
                     </div>
@@ -191,16 +189,16 @@ export default function Layout(props: PropsWithChildren) {
                                   href={item.href}
                                   className={clsx(
                                     item.current
-                                      ? "bg-gray-50 text-indigo-600"
-                                      : "text-gray-700 hover:bg-gray-50 hover:text-indigo-600",
+                                      ? "bg-background text-primary-foreground"
+                                      : "text-primary hover:bg-gray-900 hover:text-primary-foreground",
                                     "group flex gap-x-3 rounded-md p-2 text-sm font-semibold leading-6"
                                   )}
                                 >
                                   <item.icon
                                     className={clsx(
                                       item.current
-                                        ? "text-indigo-600"
-                                        : "text-gray-400 group-hover:text-indigo-600",
+                                        ? "text-primary-foreground"
+                                        : "group-hover:text-prmiary-foreground text-primary",
                                       "h-6 w-6 shrink-0"
                                     )}
                                     aria-hidden="true"
@@ -225,16 +223,16 @@ export default function Layout(props: PropsWithChildren) {
                                   href={`/project/${project.id}`}
                                   className={cn(
                                     projectId === project.id
-                                      ? "bg-gray-50 text-indigo-600"
-                                      : "text-gray-700 hover:bg-gray-50 hover:text-indigo-600",
+                                      ? "bg-background text-primary-foreground"
+                                      : "text-primary hover:bg-gray-900 hover:text-primary-foreground",
                                     "group flex gap-x-3 rounded-md p-2 text-sm font-semibold leading-6"
                                   )}
                                 >
                                   <span
                                     className={cn(
                                       projectId === project.id
-                                        ? "border-indigo-600 text-indigo-600"
-                                        : "border-gray-200 text-gray-400 group-hover:border-indigo-600 group-hover:text-indigo-600",
+                                        ? "border-primary text-primary"
+                                        : "border-gray-200 text-gray-400 group-hover:border-primary group-hover:text-primary",
                                       "flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border bg-white p-1 text-[0.625rem] font-medium"
                                     )}
                                   >
@@ -260,7 +258,7 @@ export default function Layout(props: PropsWithChildren) {
         {/* Static sidebar for desktop */}
         <div className="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-72 lg:flex-col">
           {/* Sidebar component, swap this element with another sidebar if you like */}
-          <div className="flex grow flex-col gap-y-5 overflow-y-auto border-r border-gray-200 bg-white px-6">
+          <div className="flex grow flex-col gap-y-5 overflow-y-auto border-r border-gray-200 bg-background px-6">
             <div className="flex h-16 shrink-0 items-center font-mono text-xl font-bold">
               🪢 langfuse
             </div>
@@ -274,16 +272,16 @@ export default function Layout(props: PropsWithChildren) {
                           href={item.href}
                           className={clsx(
                             item.current
-                              ? "bg-gray-50 text-indigo-600"
-                              : "text-gray-700 hover:bg-gray-50 hover:text-indigo-600",
+                              ? "bg-secondary text-primary"
+                              : "text-primary hover:bg-secondary hover:text-primary",
                             "group flex gap-x-3 rounded-md p-2 text-sm font-semibold leading-6"
                           )}
                         >
                           <item.icon
                             className={clsx(
                               item.current
-                                ? "text-indigo-600"
-                                : "text-gray-400 group-hover:text-indigo-600",
+                                ? "border-primary text-primary"
+                                : "border-primary text-primary group-hover:border-primary group-hover:text-primary",
                               "h-6 w-6 shrink-0"
                             )}
                             aria-hidden="true"
@@ -309,17 +307,17 @@ export default function Layout(props: PropsWithChildren) {
                           href={`/project/${project.id}`}
                           className={cn(
                             projectId === project.id
-                              ? "bg-gray-50 text-indigo-600"
-                              : "text-gray-700 hover:bg-gray-50 hover:text-indigo-600",
+                              ? "bg-secondary text-primary"
+                              : "text-primary hover:bg-secondary hover:text-primary",
                             "group flex gap-x-3 rounded-md p-2 text-sm font-semibold leading-6"
                           )}
                         >
                           <span
                             className={cn(
                               projectId === project.id
-                                ? "border-indigo-600 text-indigo-600"
-                                : "border-gray-200 text-gray-400 group-hover:border-indigo-600 group-hover:text-indigo-600",
-                              "w-6shrink-0 flex h-6 w-6 items-center justify-center rounded-lg border bg-white p-1 text-[0.625rem] font-medium"
+                                ? "border-primary text-primary"
+                                : "border-primary text-primary group-hover:border-primary group-hover:text-primary",
+                              "w-6shrink-0 flex h-6 w-6 items-center justify-center rounded-lg border bg-background p-1 text-[0.625rem] font-medium"
                             )}
                           >
                             <Code />
@@ -366,7 +364,7 @@ export default function Layout(props: PropsWithChildren) {
                       leaveFrom="transform opacity-100 scale-100"
                       leaveTo="transform opacity-0 scale-95"
                     >
-                      <Menu.Items className="absolute -top-full right-0 z-10 mt-2.5 w-32 rounded-md bg-white py-2 shadow-lg ring-1 ring-gray-900/5 focus:outline-none">
+                      <Menu.Items className="bg-bg-background absolute -top-full right-0 z-10 mt-2.5 w-32 rounded-md py-2 shadow-lg ring-1 ring-gray-900/5 focus:outline-none">
                         {userNavigation.map((item) => (
                           <Menu.Item key={item.name}>
                             {({ active }) => (
@@ -391,7 +389,7 @@ export default function Layout(props: PropsWithChildren) {
           </div>
         </div>
 
-        <div className="sticky top-0 z-40 flex items-center gap-x-6 bg-white px-4 py-4 shadow-sm sm:px-6 lg:hidden">
+        <div className="sticky top-0 z-40 flex items-center gap-x-6 bg-background px-4 py-4 shadow-sm sm:px-6 lg:hidden">
           <button
             type="button"
             className="-m-2.5 p-2.5 text-gray-700 lg:hidden"
@@ -428,7 +426,7 @@ export default function Layout(props: PropsWithChildren) {
               leaveFrom="transform opacity-100 scale-100"
               leaveTo="transform opacity-0 scale-95"
             >
-              <Menu.Items className="absolute right-0 z-10 mt-2.5 w-32 rounded-md bg-white py-2 shadow-lg ring-1 ring-gray-900/5 focus:outline-none">
+              <Menu.Items className="absolute right-0 z-10 mt-2.5 w-32 rounded-md bg-background py-2 shadow-lg ring-1 ring-gray-900/5 focus:outline-none ">
                 {userNavigation.map((item) => (
                   <Menu.Item key={item.name}>
                     {({ active }) => (
@@ -449,8 +447,8 @@ export default function Layout(props: PropsWithChildren) {
           </Menu>
         </div>
         <div className="lg:pl-72">
-          <main className="py-4">
-            <div className="px-4 sm:px-6 lg:px-8">{props.children}</div>
+          <main>
+            <div className="px-4 py-4 sm:px-6 lg:px-8">{props.children}</div>
           </main>
         </div>
       </div>
