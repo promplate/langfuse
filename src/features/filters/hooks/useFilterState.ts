@@ -10,10 +10,13 @@ import {
 
 const DEBUG_QUERY_STATE = false;
 
+// encode/decode filter state
+// The decode has to return null or undefined so that withDefault will use the default value.
+// An empty array will be interpreted as existing state and hence the default value will not be used.
 const CommaArrayParam = {
-  encode: (state: FilterState) =>
+  encode: (value: FilterState) =>
     encodeDelimitedArray(
-      state.map((f) => {
+      value.map((f) => {
         const stringified = `${f.column};${f.type};${
           f.type === "numberObject" || f.type === "stringObject" ? f.key : ""
         };${f.operator};${
@@ -62,7 +65,7 @@ const CommaArrayParam = {
         if (!parsed.success) return null;
         return parsed.data;
       })
-      .filter((v) => v !== null) as FilterState | undefined) ?? [],
+      .filter((v) => v !== null) as FilterState | undefined) ?? undefined,
 };
 
 // manage state with hook
