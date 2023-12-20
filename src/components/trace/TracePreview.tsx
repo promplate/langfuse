@@ -67,6 +67,7 @@ export const TracePreview = ({
           key={trace.id + "-io"}
           input={trace.input ?? undefined}
           output={trace.output ?? undefined}
+          hideIfNull={true}
         />
         <JSONView
           key={trace.id + "-metadata"}
