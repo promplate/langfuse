@@ -1,14 +1,7 @@
 name: CI/CD
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - "main"
-    tags:
-      - "v*"
-  merge_group:
-  pull_request:
     branches:
       - "main"
 
@@ -28,7 +21,7 @@ jobs:
         run: |
           cp .env.dev.example .env
       - name: lint
-        run: npm run lint
+        run: npm ci && npm run lint
 
   tests:
     runs-on: ubuntu-latest
@@ -64,7 +57,7 @@ jobs:
         run: (npm start&)
 
       - name: run tests
-        run: npm run test
+        run: npm ci && npm run test
 
   e2e-tests:
     runs-on: ubuntu-latest
@@ -96,7 +89,7 @@ jobs:
         run: npx playwright install
 
       - name: Run e2e tests
-        run: npm run test:e2e
+        run: npm ci && npm run test:e2e
 
   all-ci-passed:
     # This allows us to have a branch protection rule for tests and deploys with matrix
