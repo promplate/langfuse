@@ -1,7 +1,7 @@
 import { VERSION } from "@/src/constants/VERSION";
 import { prisma } from "@/src/server/db";
 import { Prisma } from "@prisma/client";
-import { PostHog } from "posthog-node";
+import posthog from "posthog-node";
 import { v4 as uuidv4 } from "uuid";
 
 // Safe as it is intended to be public
