@@ -80,7 +80,6 @@ types:
     properties:
       id: string
       name: string
-      status: DatasetStatus
       projectId: string
       createdAt: datetime
       updatedAt: datetime
@@ -130,6 +129,7 @@ types:
       - optional<string>
       - optional<integer>
       - optional<boolean>
+      - optional<list<string>>
   DatasetStatus:
     enum:
       - ACTIVE

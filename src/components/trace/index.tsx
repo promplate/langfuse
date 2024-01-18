@@ -6,7 +6,6 @@ import { TracePreview } from "./TracePreview";
 import Header from "@/src/components/layouts/header";
 import { Badge } from "@/src/components/ui/badge";
 import { TraceAggUsageBadge } from "@/src/components/token-usage-badge";
-import Decimal from "decimal.js";
 import { StringParam, useQueryParam } from "use-query-params";
 import { PublishTraceSwitch } from "@/src/components/publish-object-switch";
 import { DetailPageNav } from "@/src/features/navigate-detail-pages/DetailPageNav";
@@ -14,12 +13,16 @@ import { useRouter } from "next/router";
 import { type ObservationReturnType } from "@/src/server/api/routers/traces";
 import { api } from "@/src/utils/api";
 import { DeleteTrace } from "@/src/components/delete-trace";
-import { StarTraceToggle } from "@/src/components/star-toggle";
+import { StarTraceDetailsToggle } from "@/src/components/star-toggle";
 import Link from "next/link";
 import { NoAccessError } from "@/src/components/no-access";
+import { TagTraceDetailsPopover } from "@/src/features/tag/components/TagTraceDetailsPopover";
 import useLocalStorage from "@/src/components/useLocalStorage";
 import { Toggle } from "@/src/components/ui/toggle";
 import { Award, ChevronsDownUp, ChevronsUpDown } from "lucide-react";
+import { ScrollArea } from "@/src/components/ui/scroll-area";
+import { usdFormatter } from "@/src/utils/numbers";
+import type Decimal from "decimal.js";
 
 export function Trace(props: {
   observations: Array<ObservationReturnType>;
@@ -39,8 +42,8 @@ export function Trace(props: {
   );
 
   return (
-    <div className="grid h-full gap-4 md:grid-cols-3">
-      <div className="md:col-span-2 md:h-full md:overflow-y-auto">
+    <div className="grid gap-4 md:h-full md:grid-cols-3">
+      <ScrollArea className="md:col-span-2 md:h-full">
         {currentObservationId === undefined ||
         currentObservationId === "" ||
         currentObservationId === null ? (
@@ -58,9 +61,9 @@ export function Trace(props: {
             traceId={props.trace.id}
           />
         )}
-      </div>
-      <div className="md:h-full md:overflow-hidden">
-        <div className="mb-2 flex flex-row justify-end gap-2">
+      </ScrollArea>
+      <div className="md:flex md:h-full md:flex-col md:overflow-hidden">
+        <div className="mb-2 flex flex-shrink-0 flex-row justify-end gap-2">
           <Toggle
             pressed={scoresOnObservationTree}
             onPressedChange={(e) => {
@@ -86,16 +89,17 @@ export function Trace(props: {
             )}
           </Toggle>
         </div>
-        <ObservationTree
-          observations={props.observations}
-          trace={props.trace}
-          scores={props.scores}
-          currentObservationId={currentObservationId ?? undefined}
-          setCurrentObservationId={setCurrentObservationId}
-          showMetrics={metricsOnObservationTree}
-          showScores={scoresOnObservationTree}
-          className="md:h-full md:overflow-y-auto"
-        />
+        <ScrollArea className="flex flex-grow">
+          <ObservationTree
+            observations={props.observations}
+            trace={props.trace}
+            scores={props.scores}
+            currentObservationId={currentObservationId ?? undefined}
+            setCurrentObservationId={setCurrentObservationId}
+            showMetrics={metricsOnObservationTree}
+            showScores={scoresOnObservationTree}
+          />
+        </ScrollArea>
       </div>
     </div>
   );
@@ -112,20 +116,36 @@ export function TracePage({ traceId }: { traceId: string }) {
       },
     },
   );
-  const totalCost = trace.data?.observations.reduce(
-    (acc, o) => {
-      if (!o.price) return acc;
 
-      return acc ? acc.plus(o.price) : new Decimal(0).plus(o.price);
+  const traceFilterOptions = api.traces.filterOptions.useQuery(
+    {
+      projectId: trace.data?.projectId ?? "",
     },
-    undefined as Decimal | undefined,
+    {
+      trpc: {
+        context: {
+          skipBatch: true,
+        },
+      },
+      enabled: !!trace.data?.projectId && trace.isSuccess,
+    },
   );
 
+  const filterOptionTags = traceFilterOptions.data?.tags ?? [];
+  const allTags = filterOptionTags.map((t) => t.value);
+
+  const totalCost: Decimal | undefined = trace.data?.observations.reduce(
+    (prev: Decimal | undefined, curr: ObservationReturnType) => {
+      if (!curr.price) return prev;
+
+      return prev ? prev.plus(curr.price) : curr.price;
+    },
+    undefined,
+  );
   if (trace.error?.data?.code === "UNAUTHORIZED") return <NoAccessError />;
   if (!trace.data) return <div>loading...</div>;
-
   return (
-    <div className="flex flex-col overflow-hidden xl:container md:h-[calc(100vh-100px)] xl:h-[calc(100vh-40px)]">
+    <div className="flex flex-col overflow-hidden xl:container md:h-[calc(100vh-2rem)]">
       <Header
         title="Trace Detail"
         breadcrumb={[
@@ -137,7 +157,7 @@ export function TracePage({ traceId }: { traceId: string }) {
         ]}
         actionButtons={
           <>
-            <StarTraceToggle
+            <StarTraceDetailsToggle
               traceId={trace.data.id}
               projectId={trace.data.projectId}
               value={trace.data.bookmarked}
@@ -183,9 +203,20 @@ export function TracePage({ traceId }: { traceId: string }) {
         <TraceAggUsageBadge observations={trace.data.observations} />
         {totalCost ? (
           <Badge variant="outline">
-            Total cost: {totalCost.toString()} USD
+            Total cost: {usdFormatter(totalCost.toNumber())}
           </Badge>
         ) : undefined}
+      </div>
+      <div className="mt-5 rounded-lg border bg-card font-semibold text-card-foreground shadow-sm">
+        <div className="flex flex-row items-center gap-3 p-2.5">
+          Tags
+          <TagTraceDetailsPopover
+            tags={trace.data.tags}
+            availableTags={allTags}
+            traceId={trace.data.id}
+            projectId={trace.data.projectId}
+          />
+        </div>
       </div>
       <div className="mt-5 flex-1 overflow-hidden border-t pt-5">
         <Trace

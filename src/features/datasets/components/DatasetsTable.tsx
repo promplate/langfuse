@@ -10,18 +10,17 @@ import {
   DropdownMenuTrigger,
 } from "@/src/components/ui/dropdown-menu";
 import { NewDatasetButton } from "@/src/features/datasets/components/NewDatasetButton";
+import { useDetailPageLists } from "@/src/features/navigate-detail-pages/context";
 import { api } from "@/src/utils/api";
-import { cn } from "@/src/utils/tailwind";
 import { type RouterOutput } from "@/src/utils/types";
-import { DatasetStatus } from "@prisma/client";
-import { Archive, MoreVertical } from "lucide-react";
+import { MoreVertical, Trash } from "lucide-react";
+import { useEffect } from "react";
 
 type RowData = {
   key: {
     id: string;
     name: string;
   };
-  status: DatasetStatus;
   createdAt: string;
   lastRunAt?: string;
   countItems: number;
@@ -29,13 +28,23 @@ type RowData = {
 };
 
 export function DatasetsTable(props: { projectId: string }) {
+  const { setDetailPageList } = useDetailPageLists();
   const utils = api.useUtils();
   const datasets = api.datasets.allDatasets.useQuery({
     projectId: props.projectId,
   });
-  const mutArchive = api.datasets.updateDataset.useMutation({
+  const mutDelete = api.datasets.deleteDataset.useMutation({
     onSuccess: () => utils.datasets.invalidate(),
   });
+    useEffect(() => {
+    if (datasets.isSuccess) {
+      setDetailPageList(
+        "datasets",
+        datasets.data.map((t) => t.id),
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datasets.isSuccess, datasets.data]);
 
   const columns: LangfuseColumnDef<RowData>[] = [
     {
@@ -49,26 +58,6 @@ export function DatasetsTable(props: { projectId: string }) {
             value={key.name}
             truncateAt={50}
           />
-        );
-      },
-    },
-    {
-      accessorKey: "status",
-      header: "Status",
-      cell: ({ row }) => {
-        const status: DatasetStatus = row.getValue("status");
-        return (
-          <div className="flex items-center gap-2">
-            <div
-              className={cn(
-                "h-2 w-2 rounded-full",
-                status === DatasetStatus.ACTIVE
-                  ? "bg-green-600"
-                  : "bg-yellow-600",
-              )}
-            />
-            <span>{status}</span>
-          </div>
         );
       },
     },
@@ -92,7 +81,6 @@ export function DatasetsTable(props: { projectId: string }) {
       id: "actions",
       cell: ({ row }) => {
         const key: RowData["key"] = row.getValue("key");
-        const status: DatasetStatus = row.getValue("status");
         return (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -105,18 +93,14 @@ export function DatasetsTable(props: { projectId: string }) {
               <DropdownMenuLabel>Actions</DropdownMenuLabel>
               <DropdownMenuItem
                 onClick={() =>
-                  mutArchive.mutate({
+                  mutDelete.mutate({
                     projectId: props.projectId,
                     datasetId: key.id,
-                    status:
-                      status === DatasetStatus.ARCHIVED
-                        ? DatasetStatus.ACTIVE
-                        : DatasetStatus.ARCHIVED,
                   })
                 }
               >
-                <Archive className="mr-2 h-4 w-4" />
-                {status === DatasetStatus.ARCHIVED ? "Unarchive" : "Archive"}
+                <Trash className="mr-2 h-4 w-4" />
+                Delete permanently
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -132,7 +116,6 @@ export function DatasetsTable(props: { projectId: string }) {
       key: { id: item.id, name: item.name },
       createdAt: item.createdAt.toISOString(),
       lastRunAt: item.lastRunAt?.toISOString() ?? "",
-      status: item.status,
       countItems: item.countDatasetItems,
       countRuns: item.countDatasetRuns,
     };
