@@ -22,7 +22,8 @@ import {
   type Trace,
   type Observation,
   type Score,
-  type Prisma,
+  Prisma,
+  type Model,
 } from "@prisma/client";
 import { v4 } from "uuid";
 import { type z } from "zod";
@@ -34,26 +35,80 @@ export interface EventProcessor {
   ): Promise<Trace | Observation | Score> | undefined;
 }
 
-export class ObservationProcessor implements EventProcessor {
-  event:
-    | z.infer<typeof legacyObservationCreateEvent>
-    | z.infer<typeof legacyObservationUpdateEvent>
-    | z.infer<typeof eventCreateEvent>
-    | z.infer<typeof spanCreateEvent>
-    | z.infer<typeof spanUpdateEvent>
-    | z.infer<typeof generationCreateEvent>
-    | z.infer<typeof generationUpdateEvent>;
+export async function findModel(p: {
+  event: {
+    projectId: string;
+    model?: string;
+    unit?: string;
+    startTime?: Date;
+  };
+  existingDbObservation?: Observation;
+}): Promise<Model | null> {
+  const { event, existingDbObservation } = p;
+  // either get the model from the existing observation
+  // or match pattern on the user provided model name
+  const modelCondition = event.model
+    ? Prisma.sql`AND ${event.model} ~ match_pattern`
+    : existingDbObservation?.internalModel
+      ? Prisma.sql`AND model_name = ${existingDbObservation.internalModel}`
+      : undefined;
+  if (!modelCondition) return null;
 
-  constructor(
-    event:
-      | z.infer<typeof legacyObservationCreateEvent>
-      | z.infer<typeof legacyObservationUpdateEvent>
-      | z.infer<typeof eventCreateEvent>
-      | z.infer<typeof spanCreateEvent>
-      | z.infer<typeof spanUpdateEvent>
-      | z.infer<typeof generationCreateEvent>
-      | z.infer<typeof generationUpdateEvent>,
-  ) {
+  // unit based on the current event or the existing observation, both can be undefined
+  const mergedUnit = event.unit ?? existingDbObservation?.unit;
+
+  const unitCondition = mergedUnit
+    ? Prisma.sql`AND unit = ${mergedUnit}`
+    : Prisma.empty;
+
+  const sql = Prisma.sql`
+    SELECT
+      id,
+      created_at AS "createdAt",
+      updated_at AS "updatedAt",
+      project_id AS "projectId",
+      model_name AS "modelName",
+      match_pattern AS "matchPattern",
+      start_date AS "startDate",
+      input_price AS "inputPrice",
+      output_price AS "outputPrice",
+      total_price AS "totalPrice",
+      unit, 
+      tokenizer_id AS "tokenizerId",
+      tokenizer_config AS "tokenizerConfig"
+    FROM
+      models
+    WHERE (project_id = ${event.projectId}
+      OR project_id IS NULL)
+    ${modelCondition}
+    ${unitCondition}
+    AND (start_date IS NULL OR start_date <= ${
+      event.startTime ? new Date(event.startTime) : new Date()
+    }::timestamp with time zone at time zone 'UTC')
+    ORDER BY
+      project_id ASC,
+      start_date DESC
+    LIMIT 1
+  `;
+
+  const foundModels = await prisma.$queryRaw<Array<Model>>(sql);
+
+  return foundModels[0] ?? null;
+}
+
+type ObservationEvent =
+  | z.infer<typeof legacyObservationCreateEvent>
+  | z.infer<typeof legacyObservationUpdateEvent>
+  | z.infer<typeof eventCreateEvent>
+  | z.infer<typeof spanCreateEvent>
+  | z.infer<typeof spanUpdateEvent>
+  | z.infer<typeof generationCreateEvent>
+  | z.infer<typeof generationUpdateEvent>;
+
+export class ObservationProcessor implements EventProcessor {
+  event: ObservationEvent;
+
+  constructor(event: ObservationEvent) {
     this.event = event;
   }
 
@@ -65,9 +120,7 @@ export class ObservationProcessor implements EventProcessor {
     create: Prisma.ObservationUncheckedCreateInput;
     update: Prisma.ObservationUncheckedUpdateInput;
   }> {
-    const { body } = this.event;
-
-    let type;
+    let type: "EVENT" | "SPAN" | "GENERATION";
     switch (this.event.type) {
       case eventTypes.OBSERVATION_CREATE:
       case eventTypes.OBSERVATION_UPDATE:
@@ -86,8 +139,6 @@ export class ObservationProcessor implements EventProcessor {
         break;
     }
 
-    const { id, traceId, name, startTime, metadata } = body;
-
     if (
       this.event.type === eventTypes.OBSERVATION_UPDATE &&
       !existingObservation
@@ -95,22 +146,48 @@ export class ObservationProcessor implements EventProcessor {
       throw new ResourceNotFoundError(this.event.id, "Observation not found");
     }
 
-    const finalTraceId =
-      !traceId && !existingObservation
+    // find matching model definition based on event and existing observation in db
+    const internalModel: Model | undefined | null =
+      type === "GENERATION"
+        ? await findModel({
+            event: {
+              projectId: apiScope.projectId,
+              model:
+                "model" in this.event.body
+                  ? this.event.body.model ?? undefined
+                  : undefined,
+              unit:
+                "usage" in this.event.body
+                  ? this.event.body.usage?.unit ?? undefined
+                  : undefined,
+              startTime: this.event.body.startTime
+                ? new Date(this.event.body.startTime)
+                : undefined,
+            },
+            existingDbObservation: existingObservation ?? undefined,
+          })
+        : undefined;
+
+    const traceId =
+      !this.event.body.traceId && !existingObservation
         ? // Create trace if no traceid
           (
             await prisma.trace.create({
               data: {
                 projectId: apiScope.projectId,
-                name: name,
+                name: this.event.body.name,
               },
             })
           ).id
-        : traceId;
+        : this.event.body.traceId;
 
     const [newInputCount, newOutputCount] =
-      "usage" in body
-        ? this.calculateTokenCounts(body, existingObservation ?? undefined)
+      "usage" in this.event.body
+        ? this.calculateTokenCounts(
+            this.event.body,
+            internalModel ?? undefined,
+            existingObservation ?? undefined,
+          )
         : [undefined, undefined];
 
     // merge metadata from existingObservation.metadata and metadata
@@ -118,7 +195,7 @@ export class ObservationProcessor implements EventProcessor {
       existingObservation?.metadata
         ? jsonSchema.parse(existingObservation.metadata)
         : undefined,
-      metadata ?? undefined,
+      this.event.body.metadata ?? undefined,
     );
 
     const prompt =
@@ -141,76 +218,121 @@ export class ObservationProcessor implements EventProcessor {
     if (prompt === null)
       console.warn("Prompt not found for observation", this.event.body);
 
-    const observationId = id ?? v4();
+    const observationId = this.event.body.id ?? v4();
+
     return {
       id: observationId,
       create: {
         id: observationId,
-        traceId: finalTraceId,
+        traceId: traceId,
         type: type,
-        name: name,
-        startTime: startTime ? new Date(startTime) : undefined,
+        name: this.event.body.name,
+        startTime: this.event.body.startTime
+          ? new Date(this.event.body.startTime)
+          : undefined,
         endTime:
-          "endTime" in body && body.endTime
-            ? new Date(body.endTime)
+          "endTime" in this.event.body && this.event.body.endTime
+            ? new Date(this.event.body.endTime)
             : undefined,
         completionStartTime:
-          "completionStartTime" in body && body.completionStartTime
-            ? new Date(body.completionStartTime)
+          "completionStartTime" in this.event.body &&
+          this.event.body.completionStartTime
+            ? new Date(this.event.body.completionStartTime)
             : undefined,
-        metadata: mergedMetadata ?? metadata ?? undefined,
-        model: "model" in body ? body.model : undefined,
+        metadata: mergedMetadata ?? this.event.body.metadata ?? undefined,
+        model: "model" in this.event.body ? this.event.body.model : undefined,
         modelParameters:
-          "modelParameters" in body
-            ? body.modelParameters ?? undefined
+          "modelParameters" in this.event.body
+            ? this.event.body.modelParameters ?? undefined
             : undefined,
-        input: body.input ?? undefined,
-        output: body.output ?? undefined,
+        input: this.event.body.input ?? undefined,
+        output: this.event.body.output ?? undefined,
         promptTokens: newInputCount,
         completionTokens: newOutputCount,
         totalTokens:
-          "usage" in body
-            ? body.usage?.total ?? (newInputCount ?? 0) + (newOutputCount ?? 0)
+          "usage" in this.event.body
+            ? this.event.body.usage?.total ??
+              (newInputCount ?? 0) + (newOutputCount ?? 0)
             : undefined,
-        unit: "usage" in body ? body.usage?.unit ?? undefined : undefined,
-        level: body.level ?? undefined,
-        statusMessage: body.statusMessage ?? undefined,
-        parentObservationId: body.parentObservationId ?? undefined,
-        version: body.version ?? undefined,
+        unit:
+          "usage" in this.event.body
+            ? this.event.body.usage?.unit ?? internalModel?.unit
+            : internalModel?.unit,
+        level: this.event.body.level ?? undefined,
+        statusMessage: this.event.body.statusMessage ?? undefined,
+        parentObservationId: this.event.body.parentObservationId ?? undefined,
+        version: this.event.body.version ?? undefined,
         projectId: apiScope.projectId,
         promptId: prompt ? prompt.id : undefined,
+        ...(internalModel
+          ? { internalModel: internalModel.modelName }
+          : undefined),
+        inputCost:
+          "usage" in this.event.body
+            ? this.event.body.usage?.inputCost
+            : undefined,
+        outputCost:
+          "usage" in this.event.body
+            ? this.event.body.usage?.outputCost
+            : undefined,
+        totalCost:
+          "usage" in this.event.body
+            ? this.event.body.usage?.totalCost
+            : undefined,
       },
       update: {
-        name,
-        startTime: startTime ? new Date(startTime) : undefined,
+        name: this.event.body.name ?? undefined,
+        startTime: this.event.body.startTime
+          ? new Date(this.event.body.startTime)
+          : undefined,
         endTime:
-          "endTime" in body && body.endTime
-            ? new Date(body.endTime)
+          "endTime" in this.event.body && this.event.body.endTime
+            ? new Date(this.event.body.endTime)
             : undefined,
         completionStartTime:
-          "completionStartTime" in body && body.completionStartTime
-            ? new Date(body.completionStartTime)
+          "completionStartTime" in this.event.body &&
+          this.event.body.completionStartTime
+            ? new Date(this.event.body.completionStartTime)
             : undefined,
-        metadata: mergedMetadata ?? metadata ?? undefined,
-        model: "model" in body ? body.model : undefined,
+        metadata: mergedMetadata ?? this.event.body.metadata ?? undefined,
+        model: "model" in this.event.body ? this.event.body.model : undefined,
         modelParameters:
-          "modelParameters" in body
-            ? body.modelParameters ?? undefined
+          "modelParameters" in this.event.body
+            ? this.event.body.modelParameters ?? undefined
             : undefined,
-        input: body.input ?? undefined,
-        output: body.output ?? undefined,
+        input: this.event.body.input ?? undefined,
+        output: this.event.body.output ?? undefined,
         promptTokens: newInputCount,
         completionTokens: newOutputCount,
         totalTokens:
-          "usage" in body
-            ? body.usage?.total ?? (newInputCount ?? 0) + (newOutputCount ?? 0)
+          "usage" in this.event.body
+            ? this.event.body.usage?.total ??
+              (newInputCount ?? 0) + (newOutputCount ?? 0)
             : undefined,
-        unit: "usage" in body ? body.usage?.unit ?? undefined : undefined,
-        level: body.level ?? undefined,
-        statusMessage: body.statusMessage ?? undefined,
-        parentObservationId: body.parentObservationId ?? undefined,
-        version: body.version ?? undefined,
+        unit:
+          "usage" in this.event.body
+            ? this.event.body.usage?.unit ?? internalModel?.unit
+            : internalModel?.unit,
+        level: this.event.body.level ?? undefined,
+        statusMessage: this.event.body.statusMessage ?? undefined,
+        parentObservationId: this.event.body.parentObservationId ?? undefined,
+        version: this.event.body.version ?? undefined,
         promptId: prompt ? prompt.id : undefined,
+        ...(internalModel
+          ? { internalModel: internalModel.modelName }
+          : undefined),
+        inputCost:
+          "usage" in this.event.body
+            ? this.event.body.usage?.inputCost
+            : undefined,
+        outputCost:
+          "usage" in this.event.body
+            ? this.event.body.usage?.outputCost
+            : undefined,
+        totalCost:
+          "usage" in this.event.body
+            ? this.event.body.usage?.totalCost
+            : undefined,
       },
     };
   }
@@ -219,33 +341,33 @@ export class ObservationProcessor implements EventProcessor {
     body:
       | z.infer<typeof legacyObservationCreateEvent>["body"]
       | z.infer<typeof generationCreateEvent>["body"],
+    model?: Model,
     existingObservation?: Observation,
   ) {
-    const mergedModel = body.model ?? existingObservation?.model;
-
     const newPromptTokens =
       body.usage?.input ??
-      ((body.input || existingObservation?.input) && mergedModel
+      ((body.input || existingObservation?.input) && model && model.tokenizerId
         ? tokenCount({
-            model: mergedModel,
+            model: model,
             text: body.input ?? existingObservation?.input,
           })
         : undefined);
 
     const newCompletionTokens =
       body.usage?.output ??
-      ((body.output || existingObservation?.output) && mergedModel
+      ((body.output || existingObservation?.output) &&
+      model &&
+      model.tokenizerId
         ? tokenCount({
-            model: mergedModel,
+            model: model,
             text: body.output ?? existingObservation?.output,
           })
         : undefined);
+
     return [newPromptTokens, newCompletionTokens];
   }
 
-  async process(
-    apiScope: ApiAccessScope,
-  ): Promise<Trace | Observation | Score> {
+  async process(apiScope: ApiAccessScope): Promise<Observation> {
     if (apiScope.accessLevel !== "all")
       throw new AuthenticationError("Access denied for observation creation");
 
